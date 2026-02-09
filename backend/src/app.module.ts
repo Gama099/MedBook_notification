@@ -10,6 +10,7 @@ import { UsersModule } from './users/users.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { BookingModule } from './booking/booking.module';
 import { ChatModule } from './chat/chat.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { LlmModule } from './ai/llm/llm.module';
 import { EmailModule } from './common/email.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -36,6 +37,7 @@ import { LoggerMiddleware } from './common/logger.middleware';
     AvailabilityModule,
     BookingModule,
     ChatModule,
+    NotificationsModule,
     LlmModule,
   ],
   controllers: [],
