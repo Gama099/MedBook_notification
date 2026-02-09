@@ -5,9 +5,15 @@ import { usePathname } from "next/navigation";
 import { Toaster } from "react-hot-toast";
 import { useAuthStore } from "@/lib/store/auth";
 import { useGlobalSocket } from "@/lib/hooks/useGlobalSocket";
+import { useNotificationSocket } from "@/lib/hooks/useNotificationSocket";
 
 function GlobalSocketProvider() {
   useGlobalSocket();
+  return null;
+}
+
+function NotificationSocketProvider() {
+  useNotificationSocket();
   return null;
 }
 
@@ -43,6 +49,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     <>
       {/* Global socket for unread message notifications */}
       {user && <GlobalSocketProvider />}
+      {user && <NotificationSocketProvider />}
       {children}
       <Toaster
         position="top-right"

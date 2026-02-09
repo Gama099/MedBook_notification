@@ -2,14 +2,18 @@ import { BadRequestException, Injectable, ForbiddenException, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { timeConversion } from '../common/utils/time';
-import { BookingStatus, Role } from '@prisma/client';
+import { BookingStatus, NotificationType, Role } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const ALLOWED_DURATIONS = new Set([60, 120]);
 
 @Injectable()
 export class BookingService {
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
  
   async createBooking(dto: CreateBookingDto, patientId: string) {
     let CheckDate = new Date(dto.date);
@@ -30,7 +34,14 @@ export class BookingService {
 
     const doctor = await this.prisma.user.findUnique({
       where: { id: dto.doctorId },
-      select: { id: true, role: true, isActive: true, isVerified: true },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+        isVerified: true,
+        firstName: true,
+        lastName: true,
+      },
     });
 
     if (!doctor || doctor.role !== Role.DOCTOR || !doctor.isActive || !doctor.isVerified) {
@@ -116,7 +127,7 @@ export class BookingService {
       }
     }
 
-    return this.prisma.booking.create({
+    const booking = await this.prisma.booking.create({
       data: {
         doctorId: dto.doctorId,
         patientId: patientId,
@@ -127,6 +138,25 @@ export class BookingService {
         status: BookingStatus.PENDING,
       },
     });
+
+    await Promise.all([
+      this.notificationsService.createNotification({
+        userId: dto.doctorId,
+        title: 'New booking request',
+        message: `${user.firstName} ${user.lastName} requested a booking on ${dto.date} at ${startTime}.`,
+        type: NotificationType.BOOKING_REQUESTED,
+        data: { bookingId: booking.id },
+      }),
+      this.notificationsService.createNotification({
+        userId: patientId,
+        title: 'Booking request sent',
+        message: `Your booking request with Dr. ${doctor.firstName} ${doctor.lastName} is pending for ${dto.date} at ${startTime}.`,
+        type: NotificationType.BOOKING_REQUESTED,
+        data: { bookingId: booking.id },
+      }),
+    ]);
+
+    return booking;
   }
 
   async acceptBooking(bookingId: string, user: any) {
@@ -150,10 +180,29 @@ export class BookingService {
       throw new BadRequestException('Booking is not in a pending state');
     }
 
-    return this.prisma.booking.update({
+    const updatedBooking = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: BookingStatus.ACCEPTED },
     });
+
+    await Promise.all([
+      this.notificationsService.createNotification({
+        userId: updatedBooking.patientId,
+        title: 'Booking accepted',
+        message: `Your booking on ${updatedBooking.date} at ${updatedBooking.startTime} was accepted.`,
+        type: NotificationType.BOOKING_ACCEPTED,
+        data: { bookingId: updatedBooking.id },
+      }),
+      this.notificationsService.createNotification({
+        userId: updatedBooking.doctorId,
+        title: 'Booking accepted',
+        message: `You accepted the booking on ${updatedBooking.date} at ${updatedBooking.startTime}.`,
+        type: NotificationType.BOOKING_ACCEPTED,
+        data: { bookingId: updatedBooking.id },
+      }),
+    ]);
+
+    return updatedBooking;
   }
 
   async rejectBooking(bookingId: string, user: any) {
@@ -177,10 +226,29 @@ export class BookingService {
       throw new BadRequestException('Booking is not in a pending state');
     }
 
-    return this.prisma.booking.update({
+    const updatedBooking = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: BookingStatus.REJECTED },
     });
+
+    await Promise.all([
+      this.notificationsService.createNotification({
+        userId: updatedBooking.patientId,
+        title: 'Booking rejected',
+        message: `Your booking on ${updatedBooking.date} at ${updatedBooking.startTime} was rejected.`,
+        type: NotificationType.BOOKING_REJECTED,
+        data: { bookingId: updatedBooking.id },
+      }),
+      this.notificationsService.createNotification({
+        userId: updatedBooking.doctorId,
+        title: 'Booking rejected',
+        message: `You rejected the booking on ${updatedBooking.date} at ${updatedBooking.startTime}.`,
+        type: NotificationType.BOOKING_REJECTED,
+        data: { bookingId: updatedBooking.id },
+      }),
+    ]);
+
+    return updatedBooking;
   }
 
   async cancelBooking(bookingId: string, user: any) {
@@ -203,10 +271,36 @@ export class BookingService {
       throw new BadRequestException('Only pending or accepted bookings can be cancelled');
     }
 
-    return this.prisma.booking.update({
+    const updatedBooking = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: BookingStatus.CANCELLED },
     });
+
+    const cancelledByPatient = booking.patientId === user.id;
+    const cancelledByDoctor = booking.doctorId === user.id;
+
+    await Promise.all([
+      this.notificationsService.createNotification({
+        userId: updatedBooking.patientId,
+        title: 'Booking cancelled',
+        message: cancelledByPatient
+          ? `You cancelled the booking on ${updatedBooking.date} at ${updatedBooking.startTime}.`
+          : `Your booking on ${updatedBooking.date} at ${updatedBooking.startTime} was cancelled by the doctor.`,
+        type: NotificationType.BOOKING_CANCELLED,
+        data: { bookingId: updatedBooking.id },
+      }),
+      this.notificationsService.createNotification({
+        userId: updatedBooking.doctorId,
+        title: 'Booking cancelled',
+        message: cancelledByDoctor
+          ? `You cancelled the booking on ${updatedBooking.date} at ${updatedBooking.startTime}.`
+          : `The patient cancelled the booking on ${updatedBooking.date} at ${updatedBooking.startTime}.`,
+        type: NotificationType.BOOKING_CANCELLED,
+        data: { bookingId: updatedBooking.id },
+      }),
+    ]);
+
+    return updatedBooking;
   }
 
   async getPatientBookings(patientId: string) {

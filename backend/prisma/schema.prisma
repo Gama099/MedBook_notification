@@ -26,6 +26,13 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum NotificationType {
+  BOOKING_REQUESTED
+  BOOKING_ACCEPTED
+  BOOKING_REJECTED
+  BOOKING_CANCELLED
+}
+
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
@@ -75,6 +82,7 @@ model User {
   bookingsAsPatient   Booking[]      @relation("PatientBookings")
   sentMessages        Message[]      @relation("SentMessages")
   receivedMessages    Message[]      @relation("ReceivedMessages")
+  notifications       Notification[]
 
   @@map("users")
 }
@@ -148,4 +156,20 @@ model Message {
   @@index([bookingId])
   @@index([senderId, receiverId])
   @@map("messages")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  title     String
+  message   String
+  type      NotificationType
+  data      Json?
+  isRead    Boolean          @default(false)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId, isRead])
+  @@map("notifications")
 }
